@@ -8,6 +8,8 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import roc_auc_score, average_precision_score
 import sklearn.preprocessing as preprocess
 
+## 工具函數定义
+
 def sample_mask(idx, l):
     """Create mask."""
     mask = np.zeros(l)

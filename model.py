@@ -2,11 +2,19 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+## 模型结构定义，框架细节
+
 from layers import *
 
 class LinTrans(nn.Module):
+
+    # 一般把具有可学习参数的层（全连接层，卷积层）放在init中
+    # 把不具有可学习参数的层放在构造函数中
+    # 所有放在构造函数init里的层都是这个模型的“固有属性”
     def __init__(self, layers, dims):
-        super(LinTrans, self).__init__()
+        super(LinTrans, self).__init__() #调用父类构造函数
+        # moduleList 一个特殊的module，包含几个子module，像list一样使用，但不能直接将输入传给moduleList
+        # 用于存储任意数量的nn.module
         self.layers = nn.ModuleList()
         for i in range(layers):
             self.layers.append(nn.Linear(dims[i], dims[i+1]))
@@ -21,6 +29,8 @@ class LinTrans(nn.Module):
     
         return z_scaled
 
+    # 必须重写forward方法
+    # 实现模型的功能，实现各个层之间的连接关系的核心
     def forward(self, x):
         out = x
         for layer in self.layers:

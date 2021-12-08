@@ -7,6 +7,9 @@ warnings.simplefilter(action='ignore', category=RuntimeWarning)
 warnings.simplefilter(action='ignore', category=UserWarning)
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir))
 # For replicating the experiments
+
+## 参数初始化，训练调整
+
 SEED = 42
 import argparse
 import time
@@ -15,8 +18,12 @@ import numpy as np
 import scipy.sparse as sp
 import torch
 
+# 改变随机数生成器的种子，在调用其他随机数模块函数之前调用此函数
+# 设置好种子之后，每次产生的随机数会是同一个
 np.random.seed(SEED)
+# 设置CPU生成随机数种子，方便下次复现实验结果
 torch.manual_seed(SEED)
+
 from torch import optim
 import torch.nn.functional as F
 from model import LinTrans, LogReg
@@ -29,7 +36,11 @@ from sklearn.preprocessing import normalize, MinMaxScaler
 from sklearn import metrics
 import matplotlib.pyplot as plt
 
+# argparse：一个python模块，命令行选项、参数和子命令解析器
+# 可以自动生成帮助和使用手册，并在用户给程序传入无效参数时报出错误信息
 parser = argparse.ArgumentParser()
+# 添加参数
+# class argparse.ArgumentParser(prog=None, usage=None, description=None, epilog=None, parents=[], formatter_class=argparse.HelpFormatter, prefix_chars='-', fromfile_prefix_chars=None, argument_default=None, conflict_handler='error', add_help=True, allow_abbrev=True)
 parser.add_argument('--gnnlayers', type=int, default=3, help="Number of gnn layers")
 parser.add_argument('--linlayers', type=int, default=1, help="Number of hidden layers")
 parser.add_argument('--epochs', type=int, default=400, help='Number of epochs to train.')
@@ -44,6 +55,7 @@ parser.add_argument('--bs', type=int, default=10000, help='Batchsize.')
 parser.add_argument('--dataset', type=str, default='citeseer', help='type of dataset.')
 parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='Disables CUDA training.')
+# 通过parser.parse_args()方法解析参数
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
 
@@ -52,8 +64,9 @@ if args.cuda is True:
     torch.cuda.manual_seed(SEED)
     os.environ["CUDA_VISIBLE_DEVICES"] = "5"
 
+#
 def clustering(Cluster, feature, true_labels):
-    f_adj = np.matmul(feature, np.transpose(feature))
+    f_adj = np.matmul(feature, np.transpose(feature)) # 返回两个数组的矩阵乘积
     predict_labels = Cluster.fit_predict(f_adj)
     
     cm = clustering_metrics(true_labels, predict_labels)
@@ -79,7 +92,7 @@ def update_threshold(upper_threshold, lower_treshold, up_eta, low_eta):
     lowth = lower_treshold + low_eta
     return upth, lowth
 
-
+# args
 def gae_for(args):
     print("Using {} dataset".format(args.dataset))
     if args.dataset == 'cora':
@@ -117,7 +130,7 @@ def gae_for(args):
         sm_fea_s = a.dot(sm_fea_s)
     adj_1st = (adj + sp.eye(n)).toarray()
 
-    db, best_acc, best_nmi, best_adj = clustering(Cluster, sm_fea_s, true_labels)
+    db, best_acc, best_nmi, best_adj = clustering(Cluster, sm_fea_s, true_labels) #Cluster, feature, true_labels
     
     best_cl = db
     adj_label = torch.FloatTensor(adj_1st)
