@@ -68,6 +68,7 @@ if args.cuda is True:
 def clustering(Cluster, feature, true_labels):
     # np.matmul()返回两个数组的矩阵乘积
     # np.transpose()用于改变序列，在指定变参数的情况下默认为矩阵转置
+    # 求出X*X转置
     f_adj = np.matmul(feature, np.transpose(feature))
     # fit_predict(f_adj) 进行谱聚类
     predict_labels = Cluster.fit_predict(f_adj)
@@ -134,29 +135,38 @@ def gae_for(args):
     # python train.py --dataset cora --gnnlayers 8 --upth_st 0.011 --lowth_st 0.1 --upth_ed 0.001 --lowth_ed 0.5
     layers = args.linlayers
     # Store original adjacency matrix (without diagonal entries) for later
-    # np.newaxis 插入新的维度，得到一个二维数组
-    # adj.diagonal()对角线元素
-    # adj最终变为
+    # adj.diagonal()对角线元素 np.newaxis 插入新的维度，得到一个二维数组 [0]是offset，指主对角线
+    # adj最终变为 主对角线为0的矩阵，其余不变
     adj = adj - sp.dia_matrix((adj.diagonal()[np.newaxis, :], [0]), shape=adj.shape)
+    # 删除矩阵中的0元素（没看懂）
     adj.eliminate_zeros()
 
     # adj_train, train_edges, val_edges, val_edges_false, test_edges, test_edges_false = mask_test_edges(adj)
-
+    # n为adj的行数 如果为shape[1]则为列数
     n = adj.shape[0]
 
+    # 获取滤波矩阵？
     adj_norm_s = preprocess_graph(adj, args.gnnlayers, norm='sym', renorm=True)
+    # 对属性矩阵进行按行压缩存储，得到一个array
     sm_fea_s = sp.csr_matrix(features).toarray()
 
     print('Laplacian Smoothing...')
+    # 每个a不是都一样的吗？没看懂
     for a in adj_norm_s:
+        # 得到滤波阵的layer次方
         sm_fea_s = a.dot(sm_fea_s)
+    # 处理后的邻接矩阵+相同shape的单位阵，变为一个ndarray
     adj_1st = (adj + sp.eye(n)).toarray()
 
-    db, best_acc, best_nmi, best_adj = clustering(Cluster, sm_fea_s, true_labels)  # 输入为Cluster, feature, true_labels
+    # 输入为Cluster, feature, true_labels
+    db, best_acc, best_nmi, best_adj = clustering(Cluster, sm_fea_s, true_labels)
 
+    # db为对于聚类模型的优良评估
     best_cl = db
+    # 获取32位CPU类型浮点数据
     adj_label = torch.FloatTensor(adj_1st)
 
+    # 创建模型实例
     model = LinTrans(layers, dims)
 
     optimizer = optim.Adam(model.parameters(), lr=args.lr)

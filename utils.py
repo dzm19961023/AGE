@@ -285,27 +285,37 @@ def decompose(adj, dataset, norm='sym', renorm=True):
     fig.savefig("eig_renorm_" + dataset + ".png")
 
 
+# 图的预处理
 def preprocess_graph(adj, layer, norm='sym', renorm=True):
+    # 还原邻接矩阵
     adj = sp.coo_matrix(adj)
+    # 创建特殊矩阵：行数与邻接矩阵相同的对角为1的矩阵
     ident = sp.eye(adj.shape[0])
     if renorm:
+        # A+I
         adj_ = adj + ident
     else:
+        # A
         adj_ = adj
-
+    # 求每行的和
     rowsum = np.array(adj_.sum(1))
 
     if norm == 'sym':
+        # 对行和求-1/2次幂并变为对角阵， flatten() 返回折叠为一维的数组
         degree_mat_inv_sqrt = sp.diags(np.power(rowsum, -0.5).flatten())
+        # 对邻接矩阵进行归一化
         adj_normalized = adj_.dot(degree_mat_inv_sqrt).transpose().dot(degree_mat_inv_sqrt).tocoo()
+        # L = I-A_norm 求归一化laplace矩阵
         laplacian = ident - adj_normalized
     elif norm == 'left':
         degree_mat_inv_sqrt = sp.diags(np.power(rowsum, -1.).flatten())
         adj_normalized = degree_mat_inv_sqrt.dot(adj_).tocoo()
         laplacian = ident - adj_normalized
 
+    # 构造跟层数一样长的list，
     reg = [2 / 3] * (layer)
 
+    # 获取滤波矩阵吗？没看懂
     adjs = []
     for i in range(len(reg)):
         adjs.append(ident - (reg[i] * laplacian))
