@@ -8,15 +8,17 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import roc_auc_score, average_precision_score
 import sklearn.preprocessing as preprocess
 
+
 ## 工具函數定义
 
 def sample_mask(idx, l):
     """Create mask."""
+    # 返回一个给定形状和类型的，用0填充的数组
     mask = np.zeros(l)
     mask[idx] = 1
     return np.array(mask, dtype=np.bool)
 
-
+# dataset 数据集名称
 def load_data(dataset):
     # load the data: x, tx, allx, graph
     names = ['x', 'y', 'tx', 'ty', 'allx', 'ally', 'graph']
@@ -30,18 +32,30 @@ def load_data(dataset):
         fix Pickle incompatibility of numpy arrays between Python 2 and 3
         https://stackoverflow.com/questions/11305790/pickle-incompatibility-of-numpy-arrays-between-python-2-and-3
         '''
+        # format 格式化函数，格式化指定的值，并将其插入到字符串的占位符内
+        # {}{} 不设置指定位置，按默认顺序
+        # rb 二进制格式打开一个文件用于只读
         with open("data/ind.{}.{}".format(dataset, names[i]), 'rb') as rf:
+            # pickle 提供一个简单的持久化功能，对数据进行序列化or反序列化， 将对象以文件形式放在磁盘上
+            # 使用_Unpickler实现反序列化
             u = pkl._Unpickler(rf)
+            # encoding参数告诉pickle如何阶码字符串实例
+            # 读取Numpy array或者Python2存储的datetime、date、time示例时，使用encoding=‘latin1’
             u.encoding = 'latin1'
+            # 从已打开的文件中读取打包后的对象，重建其中特定对象的层次结构并返回
             cur_data = u.load()
             objects.append(cur_data)
         # objects.append(
         #     pkl.load(open("data/ind.{}.{}".format(dataset, names[i]), 'rb')))
+    # 分别给这些数据赋值
     x, y, tx, ty, allx, ally, graph = tuple(objects)
+    # 返回一堆测试集索引（将文件内容按行替换成int型变量）
     test_idx_reorder = parse_index_file(
         "data/ind.{}.test.index".format(dataset))
+    # 重排序 默认按行排序（行内部变为有序）
     test_idx_range = np.sort(test_idx_reorder)
 
+    # citeseer需要特殊处理一下
     if dataset == 'citeseer':
         # Fix citeseer dataset (there are some isolated nodes in the graph)
         # Find isolated nodes, add them as zero-vecs into the right position
@@ -54,22 +68,36 @@ def load_data(dataset):
         ty_extended[test_idx_range - min(test_idx_range), :] = ty
         ty = ty_extended
 
+    # vstack 将矩阵按照行进行拼接 构造属性矩阵
+    # tx shape为（140,1433）
+    # tolil（）将原矩阵转换为稀疏链表，可以提高访问速度
     features = sp.vstack((allx, tx)).tolil()
-    features[test_idx_reorder, :] = features[test_idx_range, :]
+    # torch.FloatTensor默认生成32位浮点数
+    # np.array 用于创建数组
     features = torch.FloatTensor(np.array(features.todense()))
+    # 获得图的邻接矩阵
     adj = nx.adjacency_matrix(nx.from_dict_of_lists(graph))
-    
+
+    # 将测试节点标签按行拼接， 大小（1708，7）
     labels = np.vstack((ally, ty))
+    # 没看懂
     labels[test_idx_reorder, :] = labels[test_idx_range, :]
-    
+
+    # tolist()将矩阵转换换为列表
+    # 测试集索引列表
     idx_test = test_idx_range.tolist()
+    # 返回的是一个可迭代对象，其中类型为对象
+    # 用于选出训练样本的大小
     idx_train = range(len(y))
+    # 选出从训练样本结束往后500个索引大小
     idx_val = range(len(y), len(y) + 500)
 
+    # 生成一个内容为bool型的数组
     train_mask = sample_mask(idx_train, labels.shape[0])
     val_mask = sample_mask(idx_val, labels.shape[0])
     test_mask = sample_mask(idx_test, labels.shape[0])
 
+    # 对标签矩阵进行处理，但在做什么没看懂？
     y_train = np.zeros(labels.shape)
     y_val = np.zeros(labels.shape)
     y_test = np.zeros(labels.shape)
@@ -77,38 +105,41 @@ def load_data(dataset):
     y_val[val_mask, :] = labels[val_mask, :]
     y_test[test_mask, :] = labels[test_mask, :]
 
+    # np.argmax() 获取指定元素中最大值所对饮的索引
+    # 为什么要返回一个指定元素的最大值索引？没看懂
     return adj, features, np.argmax(labels, 1), idx_train, idx_val, idx_test
 
+# wiki数据单独加载
 def load_wiki():
-    f = open('data/graph.txt','r')
+    f = open('data/graph.txt', 'r')
     adj, xind, yind = [], [], []
     for line in f.readlines():
         line = line.split()
-        
+
         xind.append(int(line[0]))
         yind.append(int(line[1]))
         adj.append([int(line[0]), int(line[1])])
     f.close()
     ##print(len(adj))
 
-    f = open('data/group.txt','r')
+    f = open('data/group.txt', 'r')
     label = []
     for line in f.readlines():
         line = line.split()
         label.append(int(line[1]))
     f.close()
 
-    f = open('data/tfidf.txt','r')
+    f = open('data/tfidf.txt', 'r')
     fea_idx = []
     fea = []
     adj = np.array(adj)
-    adj = np.vstack((adj, adj[:,[1,0]]))
+    adj = np.vstack((adj, adj[:, [1, 0]]))
     adj = np.unique(adj, axis=0)
-    
+
     labelset = np.unique(label)
     labeldict = dict(zip(labelset, range(len(labelset))))
     label = np.array([labeldict[x] for x in label])
-    adj = sp.csr_matrix((np.ones(len(adj)), (adj[:,0], adj[:,1])), shape=(len(label), len(label)))
+    adj = sp.csr_matrix((np.ones(len(adj)), (adj[:, 0], adj[:, 1])), shape=(len(label), len(label)))
 
     for line in f.readlines():
         line = line.split()
@@ -117,18 +148,22 @@ def load_wiki():
     f.close()
 
     fea_idx = np.array(fea_idx)
-    features = sp.csr_matrix((fea, (fea_idx[:,0], fea_idx[:,1])), shape=(len(label), 4973)).toarray()
+    features = sp.csr_matrix((fea, (fea_idx[:, 0], fea_idx[:, 1])), shape=(len(label), 4973)).toarray()
     scaler = preprocess.MinMaxScaler()
-    #features = preprocess.normalize(features, norm='l2')
+    # features = preprocess.normalize(features, norm='l2')
     features = scaler.fit_transform(features)
     features = torch.FloatTensor(features)
 
     return adj, features, label
 
 
+# 返回对应索引
 def parse_index_file(filename):
     index = []
+    # 打开对应文件名内容
     for line in open(filename):
+        # line.strip 用于移除字符串头尾指针指定的字符或字符序列
+        # 去除首尾空格
         index.append(int(line.strip()))
     return index
 
@@ -208,11 +243,11 @@ def mask_test_edges(adj):
                 continue
         val_edges_false.append([idx_i, idx_j])
 
-    #assert ~ismember(test_edges_false, edges_all)
-    #assert ~ismember(val_edges_false, edges_all)
-    #assert ~ismember(val_edges, train_edges)
-    #assert ~ismember(test_edges, train_edges)
-    #assert ~ismember(val_edges, test_edges)
+    # assert ~ismember(test_edges_false, edges_all)
+    # assert ~ismember(val_edges_false, edges_all)
+    # assert ~ismember(val_edges, train_edges)
+    # assert ~ismember(test_edges, train_edges)
+    # assert ~ismember(val_edges, test_edges)
 
     data = np.ones(train_edges.shape[0])
 
@@ -223,6 +258,7 @@ def mask_test_edges(adj):
     # NOTE: these edge lists only contain single direction of edge!
     return adj_train, train_edges, val_edges, val_edges_false, test_edges, test_edges_false
 
+
 def decompose(adj, dataset, norm='sym', renorm=True):
     adj = sp.coo_matrix(adj)
     ident = sp.eye(adj.shape[0])
@@ -232,7 +268,7 @@ def decompose(adj, dataset, norm='sym', renorm=True):
         adj_ = adj
 
     rowsum = np.array(adj_.sum(1))
-    
+
     if norm == 'sym':
         degree_mat_inv_sqrt = sp.diags(np.power(rowsum, -0.5).flatten())
         adj_normalized = adj_.dot(degree_mat_inv_sqrt).transpose().dot(degree_mat_inv_sqrt).tocoo()
@@ -242,12 +278,11 @@ def decompose(adj, dataset, norm='sym', renorm=True):
     print(max(evalue))
     exit(1)
     fig = plt.figure()
-    ax = fig.add_subplot(1,1,1)
+    ax = fig.add_subplot(1, 1, 1)
     n, bins, patches = ax.hist(evalue, 50, facecolor='g')
     plt.xlabel('Eigenvalues')
     plt.ylabel('Frequncy')
     fig.savefig("eig_renorm_" + dataset + ".png")
-
 
 
 def preprocess_graph(adj, layer, norm='sym', renorm=True):
@@ -257,9 +292,9 @@ def preprocess_graph(adj, layer, norm='sym', renorm=True):
         adj_ = adj + ident
     else:
         adj_ = adj
-    
+
     rowsum = np.array(adj_.sum(1))
-    
+
     if norm == 'sym':
         degree_mat_inv_sqrt = sp.diags(np.power(rowsum, -0.5).flatten())
         adj_normalized = adj_.dot(degree_mat_inv_sqrt).transpose().dot(degree_mat_inv_sqrt).tocoo()
@@ -268,20 +303,21 @@ def preprocess_graph(adj, layer, norm='sym', renorm=True):
         degree_mat_inv_sqrt = sp.diags(np.power(rowsum, -1.).flatten())
         adj_normalized = degree_mat_inv_sqrt.dot(adj_).tocoo()
         laplacian = ident - adj_normalized
-        
 
-    reg = [2/3] * (layer)
+    reg = [2 / 3] * (layer)
 
     adjs = []
     for i in range(len(reg)):
-        adjs.append(ident-(reg[i] * laplacian))
+        adjs.append(ident - (reg[i] * laplacian))
     return adjs
+
 
 def laplacian(adj):
     rowsum = np.array(adj.sum(1))
     degree_mat = sp.diags(rowsum.flatten())
     lap = degree_mat - adj
     return torch.FloatTensor(lap.toarray())
+
 
 def sparse_mx_to_torch_sparse_tensor(sparse_mx):
     """Convert a scipy sparse matrix to a torch sparse tensor."""
