@@ -71,9 +71,10 @@ def clustering(Cluster, feature, true_labels):
     # 求出X*X转置
     f_adj = np.matmul(feature, np.transpose(feature))
     # fit_predict(f_adj) 进行谱聚类
+    # predict_labels shape为2708 预测出节点所属标签
     predict_labels = Cluster.fit_predict(f_adj)
 
-    # 构造clustering_metrics实例
+    # 构造clustering_metrics实例 cm中包含predict_labels true_labels
     cm = clustering_metrics(true_labels, predict_labels)
     # 用于评估聚类模型 metrics.davies_bouldin_score()得到的分数越低，说明模型越好，最小值为0
     db = -metrics.davies_bouldin_score(f_adj, predict_labels)
@@ -124,15 +125,15 @@ def gae_for(args):
         Cluster = SpectralClustering(n_clusters=n_clusters, affinity = 'precomputed', random_state=0)
 
     # 载入数据
-    # 邻接矩阵，属性矩阵，xxx？训练样本范围，训练样本往后500个索引，测试集索引列表
+    # 邻接矩阵，属性矩阵，真实类别信息，训练样本范围，训练样本往后500个索引，测试集索引列表
     adj, features, true_labels, idx_train, idx_val, idx_test = load_data(args.dataset)
-    # 利用属性矩阵的大小得到节点数量，属性维度（140,1433）
+    # 利用属性矩阵的大小得到节点数量2708，属性维度1433
     n_nodes, feat_dim = features.shape
-    # 没看懂？？？
+    # [1433,500]
     dims = [feat_dim] + args.dims
 
-    # 设定gnn层数，命令中定义Cora层数为8
     # python train.py --dataset cora --gnnlayers 8 --upth_st 0.011 --lowth_st 0.1 --upth_ed 0.001 --lowth_ed 0.5
+    # layers=1
     layers = args.linlayers
     # Store original adjacency matrix (without diagonal entries) for later
     # adj.diagonal()对角线元素 np.newaxis 插入新的维度，得到一个二维数组 [0]是offset，指主对角线
@@ -142,49 +143,53 @@ def gae_for(args):
     adj.eliminate_zeros()
 
     # adj_train, train_edges, val_edges, val_edges_false, test_edges, test_edges_false = mask_test_edges(adj)
-    # n为adj的行数 如果为shape[1]则为列数
+    # n为adj的行数2708 如果为shape[1]则为列数
     n = adj.shape[0]
 
-    # 获取滤波矩阵？
+    # 获取滤波矩阵，并没有计算λmax 被骗了...
     adj_norm_s = preprocess_graph(adj, args.gnnlayers, norm='sym', renorm=True)
     # 对属性矩阵进行按行压缩存储，得到一个array
     sm_fea_s = sp.csr_matrix(features).toarray()
 
     print('Laplacian Smoothing...')
-    # 每个a不是都一样的吗？没看懂
+    # 开始做拉普拉斯平滑，并做了8次，args.gnnlayers=8(原文中的t)
+    # sm_fea_s为平滑后的属性矩阵
     for a in adj_norm_s:
         # 得到滤波阵的layer次方
         sm_fea_s = a.dot(sm_fea_s)
-    # 处理后的邻接矩阵+相同shape的单位阵，变为一个ndarray
+    # 处理后的邻接矩阵+相同shape的单位阵，变为一个[2708,2708] A+I
     adj_1st = (adj + sp.eye(n)).toarray()
 
-    # 输入为Cluster, feature, true_labels
+    # 输入为Cluster, 平滑后的feature, true_labels
+    # 用平滑后的X做聚类，得到一些结果
     db, best_acc, best_nmi, best_adj = clustering(Cluster, sm_fea_s, true_labels)
 
     # db为对于聚类模型的优良评估
     best_cl = db
-    # 获取32位CPU类型浮点数据
+    # 获取32位CPU类型浮点数据 2708*2708=7333264
     adj_label = torch.FloatTensor(adj_1st)
 
-    # 创建模型实例
+    # 创建模型实例 layers=1 dims [1433,500] 输入特征为1433维，降到500维
     model = LinTrans(layers, dims)
-
+    # 优化器？在干嘛
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
     sm_fea_s = torch.FloatTensor(sm_fea_s)
+    # 变为只有一行
     adj_label = adj_label.reshape([-1,])
 
     if args.cuda:
         model.cuda()
         inx = sm_fea_s.cuda()
         adj_label = adj_label.cuda()
-
+    # 设置 r_pos和r_neg
     pos_num = len(adj.indices)
     neg_num = n_nodes*n_nodes-pos_num
 
     up_eta = (args.upth_ed - args.upth_st) / (args.epochs/args.upd)
     low_eta = (args.lowth_ed - args.lowth_st) / (args.epochs/args.upd)
-
+    # 归一化特征矩阵，传入其中求得相似矩阵S
+    # 求得训练样本的下标
     pos_inds, neg_inds = update_similarity(normalize(sm_fea_s.numpy()), args.upth_st, args.lowth_st, pos_num, neg_num)
     upth, lowth = update_threshold(args.upth_st, args.lowth_st, up_eta, low_eta)
 

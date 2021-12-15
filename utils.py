@@ -18,7 +18,7 @@ def sample_mask(idx, l):
     mask[idx] = 1
     return np.array(mask, dtype=np.bool)
 
-# dataset 数据集名称
+
 def load_data(dataset):
     # load the data: x, tx, allx, graph
     names = ['x', 'y', 'tx', 'ty', 'allx', 'ally', 'graph']
@@ -75,10 +75,10 @@ def load_data(dataset):
     # torch.FloatTensor默认生成32位浮点数
     # np.array 用于创建数组
     features = torch.FloatTensor(np.array(features.todense()))
-    # 获得图的邻接矩阵
+    # 获得图的邻接矩阵(压缩后)
     adj = nx.adjacency_matrix(nx.from_dict_of_lists(graph))
 
-    # 将测试节点标签按行拼接， 大小（1708，7）
+    # 将除训练集以外的标签按行拼接， 大小（2708，7）
     labels = np.vstack((ally, ty))
     # 没看懂
     labels[test_idx_reorder, :] = labels[test_idx_range, :]
@@ -97,16 +97,19 @@ def load_data(dataset):
     val_mask = sample_mask(idx_val, labels.shape[0])
     test_mask = sample_mask(idx_test, labels.shape[0])
 
-    # 对标签矩阵进行处理，但在做什么没看懂？
+    # 构造跟label大小一样的矩阵（2708，7）
     y_train = np.zeros(labels.shape)
     y_val = np.zeros(labels.shape)
     y_test = np.zeros(labels.shape)
+    # 取前140个（0,139）
     y_train[train_mask, :] = labels[train_mask, :]
+    # 取中间500（140,639）
     y_val[val_mask, :] = labels[val_mask, :]
+    # 跟测试集相同
     y_test[test_mask, :] = labels[test_mask, :]
 
     # np.argmax() 获取指定元素中最大值所对饮的索引
-    # 为什么要返回一个指定元素的最大值索引？没看懂
+    # np.argmax(labels, 1) 返回真实类别信息
     return adj, features, np.argmax(labels, 1), idx_train, idx_val, idx_test
 
 # wiki数据单独加载
@@ -297,13 +300,14 @@ def preprocess_graph(adj, layer, norm='sym', renorm=True):
     else:
         # A
         adj_ = adj
-    # 求每行的和
+    # 对A+I求每行的和 所以这为什么就是度了呢= =
     rowsum = np.array(adj_.sum(1))
 
     if norm == 'sym':
         # 对行和求-1/2次幂并变为对角阵， flatten() 返回折叠为一维的数组
+        # 得到度矩阵的-1/2次方
         degree_mat_inv_sqrt = sp.diags(np.power(rowsum, -0.5).flatten())
-        # 对邻接矩阵进行归一化
+        # 对邻接矩阵进行归一化 D^(-1/2)*A*D(-1/2)
         adj_normalized = adj_.dot(degree_mat_inv_sqrt).transpose().dot(degree_mat_inv_sqrt).tocoo()
         # L = I-A_norm 求归一化laplace矩阵
         laplacian = ident - adj_normalized
@@ -312,12 +316,13 @@ def preprocess_graph(adj, layer, norm='sym', renorm=True):
         adj_normalized = degree_mat_inv_sqrt.dot(adj_).tocoo()
         laplacian = ident - adj_normalized
 
-    # 构造跟层数一样长的list，
+    # 构造跟层数一样长的list，8层 2/3怎么来的？为什么是2/3？
     reg = [2 / 3] * (layer)
 
     # 获取滤波矩阵吗？没看懂
     adjs = []
     for i in range(len(reg)):
+        # 获得滤波矩阵， I-kL， 所以根本没有算所谓的λmax啊喂！！！
         adjs.append(ident - (reg[i] * laplacian))
     return adjs
 
